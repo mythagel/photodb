@@ -135,10 +135,10 @@ int main(int argc, char* argv[])
 	if(args.size() < 2)
 	{
 		std::cerr << args[0] << " src_folder\n";
-		return false;
+		return 1;
 	}
 
-	std::string src = args[1];
+	auto src = args[1];
 
 	db_t db{src + "/photo.db"};
 	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
@@ -195,37 +195,6 @@ int main(int argc, char* argv[])
 		std::cout << "\r" << std::string((static_cast<double>(index) / count) * 80, '=');
 	}
 	std::cout << "\n";
-
-//	std::map<std::string, std::vector<std::shared_ptr<photo_t> > > name_dups;
-//	std::map<std::string, std::vector<std::shared_ptr<photo_t> > > checksum_dups;
-//	for(auto& photo : photo_list)
-//	{
-//		name_dups[photo->file_name].push_back(photo);
-//		checksum_dups[photo->checksum].push_back(photo);
-//	}
-//
-//	std::cout << "Name dups:\n";
-//	for(const auto& x : name_dups)
-//	{
-//		if(x.second.size() <= 1)
-//			continue;
-//
-//		std::cout << x.first << " {\n";
-//		for(auto& l : x.second)
-//			std::cout << *l << "\n";
-//		std::cout << "}\n";
-//	}
-//
-//	std::cout << "Checksum dups:\n";
-//	for(auto& x : checksum_dups)
-//	{
-//		if(x.second.size() <= 1)
-//			continue;
-//		std::cout << x.first << " {\n";
-//		for(auto& l : x.second)
-//			std::cout << *l << "\n";
-//		std::cout << "}\n";
-//	}
 
 	return 0;
 }
