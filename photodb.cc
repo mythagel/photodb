@@ -4,11 +4,11 @@
  *  Created on: 24/03/2013
  *      Author: nicholas
  */
+#include <cassert>
 #include <iostream>
 #include <dirent.h>
 #include <memory>
 #include <vector>
-#include <sstream>
 
 #include <exiv2/exiv2.hpp>
 
@@ -129,14 +129,16 @@ bool checksum(photo_t& photo)
 
 int main(int argc, char* argv[])
 {
-	if(argc < 3)
+	std::vector<std::string> args(argv, argv+argc);
+	assert(!args.empty());
+
+	if(args.size() < 2)
 	{
-		std::cerr << argv[0] << " src_folder dest_folder\n";
+		std::cerr << args[0] << " src_folder\n";
 		return false;
 	}
 
-	std::string src = argv[1];
-	std::string dest = argv[2];
+	std::string src = args[1];
 
 	db_t db{src + "/photo.db"};
 	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
