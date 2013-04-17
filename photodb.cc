@@ -36,6 +36,13 @@
 //    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 //}
 
+template <typename ex = std::runtime_error>
+void throw_if(bool cond, const std::string& what)
+{
+	if(cond)
+		throw ex(what);
+}
+
 struct dim
 {
 	long width;
@@ -215,29 +222,53 @@ void exif(photo_t& photo)
 
 }
 
-bool checksum(photo_t& photo)
+struct mmap_t
 {
-	int fd = open(photo.full_filename().c_str(), O_RDONLY);
-	if (fd == -1)
-		return false;
+	int fd;
+	void* addr;
+	std::size_t size;
 
-	void* addr = mmap(nullptr, photo.size, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (addr == MAP_FAILED)
+	mmap_t(const char* filename, std::size_t size)
+	 : fd(-1), addr(nullptr), size(size)
 	{
-		close(fd);
-		return false;
+		fd = open(filename, O_RDONLY);
+		throw_if(fd == -1, strerror(errno));
+
+		addr = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+		throw_if(addr == MAP_FAILED, strerror(errno));
 	}
 
-	unsigned char hash[20];
-	sha1::calc(addr, photo.size, hash);
+	operator void*()
+	{
+		return addr;
+	}
 
-	char hexstring[41];
-	sha1::toHexString(hash, hexstring);
-	photo.checksum = hexstring;
+	~mmap_t()
+	{
+		munmap(addr, size);
+		close(fd);
+	}
+};
 
-	munmap(addr, photo.size);
-	close(fd);
-	return true;
+bool checksum(photo_t& photo)
+{
+	try
+	{
+		mmap_t addr(photo.full_filename().c_str(), photo.size);
+
+		unsigned char hash[20];
+		sha1::calc(addr, photo.size, hash);
+
+		char hexstring[41];
+		sha1::toHexString(hash, hexstring);
+		photo.checksum = hexstring;
+
+		return true;
+	}
+	catch(const std::runtime_error& ex)
+	{
+		return false;
+	}
 }
 
 int main(int argc, char* argv[])
