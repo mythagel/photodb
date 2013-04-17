@@ -4,7 +4,6 @@
  *  Created on: 24/03/2013
  *      Author: nicholas
  */
-#include "timestamp.h"
 #include <iostream>
 #include <dirent.h>
 #include <memory>
@@ -13,128 +12,13 @@
 
 #include <exiv2/exiv2.hpp>
 
-#include "sha1.h"
-#include <sys/mman.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <cstdio>
-#include <cstdlib>
-#include <unistd.h>
-#include <chrono>
-#include <tuple>
-#include <thread>
-#include <iterator>
-#include <algorithm>
-#include <stdexcept>
-#include <ctime>
-
+#include "sha1.h"
 #include "db.h"
-
-//template<typename T, typename... Args>
-//std::unique_ptr<T> make_unique(Args&&... args)
-//{
-//    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-//}
-
-template <typename ex = std::runtime_error>
-void throw_if(bool cond, const std::string& what)
-{
-	if(cond)
-		throw ex(what);
-}
-
-struct dim
-{
-	long width;
-	long height;
-
-	dim()
-	 : width(), height()
-	{
-	}
-
-	dim(long width, long height)
-	 : width(width), height(height)
-	{
-	}
-
-	dim(const std::string& s)
-	 : width(), height()
-	{
-		std::istringstream ss(s);
-		ss >> width;
-		ss.ignore();
-		ss >> height;
-	}
-
-	std::string str() const
-	{
-		std::ostringstream s;
-		s << width << "," << height;
-		return s.str();
-	}
-
-	bool operator<(const dim& o) const
-	{
-		return std::tie(width, height) < std::tie(o.width, o.height);
-	}
-	bool operator==(const dim& o) const
-	{
-		return std::tie(width, height) == std::tie(o.width, o.height);
-	}
-};
-
-struct photo_t
-{
-	std::string file_name;
-	std::string path;
-
-	uint64_t size;
-	timestamp_t mtime;
-
-	timestamp_t timestamp;
-	std::string checksum;
-
-	dim pixel_size;
-	dim exif_size;
-
-	photo_t(const std::string& name, const std::string& path)
-	 : file_name(name), path(path), size(0)
-	{
-	}
-
-	std::string full_filename() const
-	{
-		return path + '/' + file_name;
-	}
-
-//	std::tuple<std::string, std::string, uint64_t, std::string, std::string, std::string, std::string> to_tuple() const
-//	{
-//		std::ostringstream smtime;
-//		smtime << mtime;
-//		std::ostringstream pixel;
-//		pixel << pixel_size.width << "," << pixel_size.height;
-//		std::ostringstream exif;
-//		exif << exif_size.width << "," << exif_size.height;
-//
-//		return std::make_tuple(file_name, path, size, smtime.str(), checksum, pixel.str(), exif.str());
-//	}
-};
-
-std::ostream& operator<<(std::ostream& os, const photo_t& photo)
-{
-	os << "{\n";
-	os << "   \"file_name\":\"" << photo.file_name << "\",\n";
-	os << "   \"path\":\"" << photo.path << "\",\n";
-	os << "   \"size\":\"" << photo.size << "\",\n";
-	os << "   \"mtime\":\"" << photo.mtime << "\",\n";
-	os << "   \"timestamp\":\"" << photo.timestamp << "\",\n";
-	os << "   \"checksum\":\"" << photo.checksum << "\",\n";
-	os << "   \"pixel_size\":\"" << photo.pixel_size.width << "," << photo.pixel_size.height << "\",\n";
-	os << "   \"exif_size\":\"" << photo.exif_size.width << "," << photo.exif_size.height << "\"\n";
-	os << "}";
-	return os;
-}
+#include "photo.h"
+#include "timestamp.h"
+#include "mmap.h"
+#include "util.h"
 
 template <typename Fn>
 bool enumerate_directory(const std::string& path, Fn func)
@@ -221,34 +105,6 @@ void exif(photo_t& photo)
 	}
 
 }
-
-struct mmap_t
-{
-	int fd;
-	void* addr;
-	std::size_t size;
-
-	mmap_t(const char* filename, std::size_t size)
-	 : fd(-1), addr(nullptr), size(size)
-	{
-		fd = open(filename, O_RDONLY);
-		throw_if(fd == -1, strerror(errno));
-
-		addr = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
-		throw_if(addr == MAP_FAILED, strerror(errno));
-	}
-
-	operator void*()
-	{
-		return addr;
-	}
-
-	~mmap_t()
-	{
-		munmap(addr, size);
-		close(fd);
-	}
-};
 
 bool checksum(photo_t& photo)
 {
