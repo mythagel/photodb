@@ -153,13 +153,16 @@ bool rebuild_db(db_t& db, const std::string& src)
 	// update db.
 	db.execute("PRAGMA synchronous = OFF");
 
-	std::cout << std::string(80, '-') << std::endl;
+	//std::cout << std::string(80, '-') << std::endl;
 	size_t index(0);
 	size_t count = photo_list.size();
+	size_t stat_new(0);
+	size_t stat_old(0);
 	for(auto& photo : photo_list)
 	{
 		bool new_photo(true);
-		auto x = [&photo, &new_photo](const std::tuple<std::string, std::string, std::string, std::string>& t){
+		auto x = [&photo, &new_photo](const std::tuple<std::string, std::string, std::string, std::string>& t)
+		{
 			photo->timestamp = timestamp_t{std::get<0>(t)};
 			photo->checksum = std::get<1>(t);
 			photo->pixel_size = {std::get<2>(t)};
@@ -176,9 +179,16 @@ bool rebuild_db(db_t& db, const std::string& src)
 			insert_photo.execute(photo->file_name, photo->path, photo->size, photo->mtime.str(), photo->timestamp.str(), photo->checksum, photo->pixel_size.str(), photo->exif_size.str());
 		}
 
+		++(new_photo ? stat_new : stat_old);
+
 //		std::cout /*<< (new_photo ? "NEW " : "DB  ")*/ << *photo << "\n";
 		++index;
-		std::cout << "\r" << std::string((static_cast<double>(index) / count) * 80, '=');
+		//std::cout << "\r" << std::string((static_cast<double>(index) / count) * 80, '=');
+		
+		if(index % 100 == 0)
+		{
+			std::cout << "new: " << stat_new << "; old: " << stat_old << "\n";
+		}
 	}
 	std::cout << "\n";
 	return true;
@@ -196,12 +206,28 @@ int main(int argc, char* argv[])
 	}
 
 	auto src = args[1];
+	if(src.empty())
+	{
+		std::cerr << args[0] << " src_folder\n";
+		return 1;
+	}
+
+	if(src.back() == '/')
+		src.pop_back();
 
 	db_t db{src + "/photo.db"};
 	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
+	db.execute("CREATE INDEX IF NOT EXISTS photos_idx ON photos (file_name, path, size, mtime)");
 
 	if(!rebuild_db(db, src))
 		return 1;
+
+/*
+TODO list
+need to do something with the db
+identify duplicates.
+reorganise into time date structure
+*/
 
 	return 0;
 }
