@@ -127,22 +127,8 @@ bool checksum(photo_t& photo)
 	}
 }
 
-int main(int argc, char* argv[])
+bool rebuild_db(db_t& db, const std::string& src)
 {
-	std::vector<std::string> args(argv, argv+argc);
-	assert(!args.empty());
-
-	if(args.size() < 2)
-	{
-		std::cerr << args[0] << " src_folder\n";
-		return 1;
-	}
-
-	auto src = args[1];
-
-	db_t db{src + "/photo.db"};
-	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
-
 	db_t::statement_t<std::string, std::string, uint64_t, std::string, std::string, std::string, std::string, std::string> insert_photo{db, "INSERT INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?)"};
 	db_t::statement_t<std::string, std::string, uint64_t, std::string> photo_exists{db, "SELECT timestamp, checksum, pixel_size, exif_size FROM photos WHERE file_name = ? AND path = ? AND size = ? and mtime = ?"};
 
@@ -160,7 +146,7 @@ int main(int argc, char* argv[])
 		photo.mtime = timestamp_t{sb.st_mtime};
 		photo_list.emplace_back(new photo_t(photo));
 	}))
-		return 1;
+		return false;
 
 	std::cerr << photo_list.size() << " Files.\n";
 
@@ -195,6 +181,27 @@ int main(int argc, char* argv[])
 		std::cout << "\r" << std::string((static_cast<double>(index) / count) * 80, '=');
 	}
 	std::cout << "\n";
+	return true;
+}
+
+int main(int argc, char* argv[])
+{
+	std::vector<std::string> args(argv, argv+argc);
+	assert(!args.empty());
+
+	if(args.size() < 2)
+	{
+		std::cerr << args[0] << " src_folder\n";
+		return 1;
+	}
+
+	auto src = args[1];
+
+	db_t db{src + "/photo.db"};
+	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
+
+	if(!rebuild_db(db, src))
+		return 1;
 
 	return 0;
 }
