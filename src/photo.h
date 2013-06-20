@@ -28,6 +28,7 @@ struct dim
 
 struct photo_t
 {
+	int64_t id;
 	std::string file_name;
 	std::string path;
 

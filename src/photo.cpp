@@ -45,7 +45,7 @@ bool dim::operator==(const dim& o) const
 }
 
 photo_t::photo_t(const std::string& name, const std::string& path)
- : file_name(name), path(path), size(0)
+ : id(0), file_name(name), path(path), size(0)
 {
 }
 

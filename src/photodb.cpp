@@ -20,6 +20,8 @@
 #include "mmap.h"
 #include "util.h"
 
+#include <unistd.h>
+
 template <typename Fn>
 bool enumerate_directory(const std::string& path, Fn func)
 {
@@ -129,8 +131,11 @@ bool checksum(photo_t& photo)
 
 bool rebuild_db(db_t& db, const std::string& src)
 {
-	db_t::statement_t<std::string, std::string, uint64_t, std::string, std::string, std::string, std::string, std::string> insert_photo{db, "INSERT INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?)"};
-	db_t::statement_t<std::string, std::string, uint64_t, std::string> photo_exists{db, "SELECT timestamp, checksum, pixel_size, exif_size FROM photos WHERE file_name = ? AND path = ? AND size = ? and mtime = ?"};
+	timestamp_t rebuilt(time(nullptr));
+	
+	db_t::statement_t<std::string, std::string, uint64_t, std::string, std::string, std::string, std::string, std::string, std::string> insert_photo{db, "INSERT INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"};
+	db_t::statement_t<std::string, std::string, uint64_t, std::string> photo_exists{db, "SELECT ROWID, timestamp, checksum, pixel_size, exif_size FROM photos WHERE file_name = ? AND path = ? AND size = ? and mtime = ?"};
+	db_t::statement_t<std::string, int64_t> update_timestamp{db, "UPDATE photos set rebuilt = ? WHERE ROWID = ?"};
 
 	std::vector<std::shared_ptr<photo_t> > photo_list;
 	if(!enumerate_directory(src, [&photo_list](photo_t photo)
@@ -153,45 +158,88 @@ bool rebuild_db(db_t& db, const std::string& src)
 	// update db.
 	db.execute("PRAGMA synchronous = OFF");
 
-	//std::cout << std::string(80, '-') << std::endl;
-	size_t index(0);
-	size_t count = photo_list.size();
 	size_t stat_new(0);
 	size_t stat_old(0);
 	for(auto& photo : photo_list)
 	{
 		bool new_photo(true);
-		auto x = [&photo, &new_photo](const std::tuple<std::string, std::string, std::string, std::string>& t)
+		auto x = [&photo, &new_photo](const std::tuple<int64_t, std::string, std::string, std::string, std::string>& t)
 		{
-			photo->timestamp = timestamp_t{std::get<0>(t)};
-			photo->checksum = std::get<1>(t);
-			photo->pixel_size = {std::get<2>(t)};
-			photo->exif_size = {std::get<3>(t)};
+			photo->id = std::get<0>(t);
+			photo->timestamp = timestamp_t{std::get<1>(t)};
+			photo->checksum = std::get<2>(t);
+			photo->pixel_size = {std::get<3>(t)};
+			photo->exif_size = {std::get<4>(t)};
 			new_photo = false;
 		};
-		photo_exists.query<decltype(x), std::string, std::string, std::string, std::string>(x, photo->file_name, photo->path, photo->size, photo->mtime.str());
+		photo_exists.query<decltype(x), int64_t, std::string, std::string, std::string, std::string>(x, photo->file_name, photo->path, photo->size, photo->mtime.str());
 
 		if(new_photo)
 		{
 			exif(*photo);
 			checksum(*photo);
 
-			insert_photo.execute(photo->file_name, photo->path, photo->size, photo->mtime.str(), photo->timestamp.str(), photo->checksum, photo->pixel_size.str(), photo->exif_size.str());
+			insert_photo.execute(photo->file_name, photo->path, photo->size, photo->mtime.str(), photo->timestamp.str(), photo->checksum, photo->pixel_size.str(), photo->exif_size.str(), rebuilt.str());
+		}
+		else
+		{
+			update_timestamp.execute(rebuilt.str(), photo->id);
 		}
 
 		++(new_photo ? stat_new : stat_old);
-
-//		std::cout /*<< (new_photo ? "NEW " : "DB  ")*/ << *photo << "\n";
-		++index;
-		//std::cout << "\r" << std::string((static_cast<double>(index) / count) * 80, '=');
 		
-		if(index % 100 == 0)
+		if(stat_new && stat_new % 100 == 0)
 		{
 			std::cout << "new: " << stat_new << "; old: " << stat_old << "\n";
 		}
 	}
-	std::cout << "\n";
+	std::cout << "new: " << stat_new << "; old: " << stat_old << "\n";
 	return true;
+}
+
+std::vector<std::string> identify_checksum_dups(db_t& db)
+{
+	std::vector<std::tuple<std::string, std::string> > dups;
+	
+	db_t::statement_t<> checksum_dups{db, "select file_name, checksum as id from photos group by file_name, checksum having count(path) > 1;"};
+	db_t::statement_t<std::string, std::string> dup_list{db, "select path from photos where file_name = ? and checksum = ?"};
+	
+	auto x = [&dups](const std::tuple<std::string, std::string>& t)
+	{
+		auto filename = std::get<0>(t);
+		auto checksum = std::get<1>(t);
+		dups.emplace_back(filename, checksum);
+	};
+	checksum_dups.query<decltype(x), std::string, std::string>(x);
+
+	for(auto& dup : dups)
+	{
+		auto filename = std::get<0>(dup);
+		auto checksum = std::get<1>(dup);
+		
+		std::vector<std::string> file_dups;
+		
+		std::cout << "File: " << filename << " (" << checksum << ")\n";
+		auto x = [&file_dups, &filename](const std::tuple<std::string>& t)
+		{
+			// TODO
+			auto path = std::get<0>(t);
+			file_dups.push_back(path + "/" + filename);
+		};
+		dup_list.query<decltype(x), std::string>(x, filename, checksum);
+		
+		for(auto& file_dup : file_dups)
+		{
+			std::cout << "   " << file_dup << "\n";
+		}
+		for(size_t i = 1; i < file_dups.size(); ++i)
+		{
+			std::cout << "rm " << file_dups[i] << "\n";
+			unlink(file_dups[i].c_str());
+		}
+		// TODO
+	}
+	return {};
 }
 
 int main(int argc, char* argv[])
@@ -216,18 +264,24 @@ int main(int argc, char* argv[])
 		src.pop_back();
 
 	db_t db{src + "/photo.db"};
-	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT)");
+	db.execute("CREATE TABLE IF NOT EXISTS photos (file_name TEXT, path TEXT, size INTEGER, mtime TEXT, timestamp TEXT, checksum TEXT, pixel_size TEXT, exif_size TEXT, rebuilt TEXT)");
 	db.execute("CREATE INDEX IF NOT EXISTS photos_idx ON photos (file_name, path, size, mtime)");
 
 	if(!rebuild_db(db, src))
 		return 1;
 
+	
+
 /*
 TODO list
 need to do something with the db
 identify duplicates.
+	checksum + filename duplicates are indistinct
+	
 reorganise into time date structure
 */
+
+	//identify_checksum_dups(db);
 
 	return 0;
 }

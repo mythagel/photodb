@@ -57,7 +57,7 @@ public:
 	    	if(int res = sqlite3_bind_int64(stmt, arg, val) != SQLITE_OK)
 				throw error{sqlite3_errmsg(db), res};
 		}
-		void bind_arg_int(int arg, sqlite3_int64 val)
+		void bind_arg_int(int arg, int64_t val)
 		{
 	    	if(int res = sqlite3_bind_int64(stmt, arg, val) != SQLITE_OK)
 				throw error{sqlite3_errmsg(db), res};
@@ -92,7 +92,7 @@ public:
 	    {
 	    	val = sqlite3_column_int(stmt, col);
 	    }
-	    void unpack_column_int(int col, sqlite3_int64& val)
+	    void unpack_column_int(int col, int64_t& val)
 	    {
 	    	val = sqlite3_column_int64(stmt, col);
 	    }
