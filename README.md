@@ -3,4 +3,4 @@ photodb
 
 cli photo organiser
 
-Under active development.
+Not very useful. Creates an sqlite db of a photo folder.
